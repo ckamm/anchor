@@ -40,3 +40,4 @@ bytemuck = "1.4.0"
 solana-program = "1.8.5"
 thiserror = "1.0.20"
 bincode = "1.3.3"
+stack-buffer = { version = "0.2.0", default-features = false, features = ["writer"], git = "https://github.com/ckamm/stack-buffer.git", branch = "ckamm/writer-rust-stable" }

@@ -174,6 +174,19 @@ pub trait InstructionData: AnchorSerialize {
 /// An event that can be emitted via a Solana log.
 pub trait Event: AnchorSerialize + AnchorDeserialize + Discriminator {
     fn data(&self) -> Vec<u8>;
+
+    /// Convert to base64 encoded bytes
+    fn base64(&self) -> Vec<u8> {
+        let mut enc = base64::write::EncoderWriter::new(Vec::new(), base64::STANDARD);
+
+        // the intermediate buffer reduces overall compute needs significantly
+        let mut bufenc = stack_buffer::StackBufWriter::<_, 64>::new(&mut enc);
+
+        std::io::Write::write_all(&mut bufenc, &<Self as Discriminator>::discriminator()).unwrap();
+        borsh::to_writer(&mut bufenc, self).unwrap();
+        std::io::Write::flush(&mut bufenc);
+        bufenc.get_mut().finish().unwrap()
+    }
 }
 
 // The serialized event data to be emitted via a Solana log.

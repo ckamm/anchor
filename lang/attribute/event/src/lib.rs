@@ -54,8 +54,8 @@ pub fn emit(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let data: proc_macro2::TokenStream = input.into();
     proc_macro::TokenStream::from(quote! {
         {
-            let data = anchor_lang::Event::data(&#data);
-            let msg_str = &anchor_lang::__private::base64::encode(data);
+            let data = anchor_lang::Event::base64(&#data);
+            let msg_str = unsafe { std::str::from_utf8_unchecked(&data) };
             anchor_lang::solana_program::msg!(msg_str);
         }
     })
