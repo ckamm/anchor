@@ -5,7 +5,7 @@ pub mod file;
 pub mod pda;
 pub mod relations;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Idl {
     pub version: String,
     pub name: String,

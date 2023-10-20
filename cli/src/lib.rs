@@ -356,6 +356,9 @@ pub enum IdlCommand {
         #[clap(short, long)]
         filepath: String,
     },
+    WriteEmptyBuffer {
+        program_id: Pubkey,
+    },
     /// Sets a new IDL buffer for the program.
     SetBuffer {
         program_id: Pubkey,
@@ -421,9 +424,19 @@ pub enum IdlCommand {
     /// The address can be a program, IDL account, or IDL buffer.
     Fetch {
         address: Pubkey,
+
         /// Output file for the idl (stdout if not specified).
         #[clap(short, long)]
         out: Option<String>,
+    },
+    Resize {
+        address: Pubkey,
+
+        #[clap(short, long)]
+        program_id: Pubkey,
+
+        #[clap(short, long)]
+        new_size: u64,
     },
 }
 
@@ -1857,6 +1870,9 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             program_id,
             filepath,
         } => idl_write_buffer(cfg_override, program_id, filepath).map(|_| ()),
+        IdlCommand::WriteEmptyBuffer {
+            program_id,
+        } => idl_write_empty_buffer(cfg_override, program_id).map(|_| ()),
         IdlCommand::SetBuffer {
             program_id,
             buffer,
@@ -1881,6 +1897,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             no_docs,
         } => idl_parse(cfg_override, file, out, out_ts, no_docs),
         IdlCommand::Fetch { address, out } => idl_fetch(cfg_override, address, out),
+        IdlCommand::Resize { address, program_id, new_size } => idl_resize(cfg_override, program_id, address, new_size),
     }
 }
 
@@ -1934,6 +1951,21 @@ fn idl_write_buffer(
         println!("Idl buffer created: {idl_buffer:?}");
 
         Ok(idl_buffer)
+    })
+}
+
+fn idl_write_empty_buffer(
+    cfg_override: &ConfigOverride,
+    program_id: Pubkey,
+) -> Result<Pubkey> {
+    with_workspace(cfg_override, |cfg| {
+        let keypair = cfg.provider.wallet.to_string();
+        let idl = Idl::default();
+        let idl_buffer = create_idl_buffer(cfg, &keypair, &program_id, &idl)?;
+
+        println!("Idl buffer created: {idl_buffer:?}");
+
+        Ok(Pubkey::default())
     })
 }
 
@@ -2232,6 +2264,56 @@ fn idl_fetch(cfg_override: &ConfigOverride, address: Pubkey, out: Option<String>
         Some(out) => OutFile::File(PathBuf::from(out)),
     };
     write_idl(&idl, out)
+}
+
+fn idl_resize(
+    cfg_override: &ConfigOverride,
+    program_id: Pubkey,
+    address: Pubkey,
+    new_size: u64,
+) -> Result<()> {
+    with_workspace(cfg_override, |cfg| {
+        // Misc.
+        let idl_address = address;
+        let keypair = solana_sdk::signature::read_keypair_file(&cfg.provider.wallet.to_string())
+            .map_err(|_| anyhow!("Unable to read keypair file"))?;
+        let url = cluster_url(cfg, &cfg.test_validator);
+        let client = create_client(url);
+
+        let idl_authority = keypair.pubkey();
+
+        // Instruction data.
+        let data =
+            serialize_idl_ix(anchor_lang::idl::IdlInstruction::Resize { data_len: new_size })?;
+
+        // Instruction accounts.
+        let accounts = vec![
+            AccountMeta::new(idl_address, false),
+            AccountMeta::new_readonly(idl_authority, true),
+            AccountMeta::new_readonly(solana_program::system_program::ID, false),
+        ];
+
+        // Instruction.
+        let ix = Instruction {
+            program_id,
+            accounts,
+            data,
+        };
+
+        // Send transaction.
+        let latest_hash = client.get_latest_blockhash()?;
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&keypair.pubkey()),
+            &[&keypair],
+            latest_hash,
+        );
+        client.send_and_confirm_transaction_with_spinner(&tx)?;
+
+        println!("Resize complete.");
+
+        Ok(())
+    })
 }
 
 fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
